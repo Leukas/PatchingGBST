@@ -1,4 +1,5 @@
 # Project folders
+.vscode/
 data/
 dumped/
 
