@@ -23,12 +23,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-# logger = logging.getLogger('simple_example')
-# logger.setLevel(logging.INFO)
-# # create file handler that logs debug and higher level messages
-# # create console handler with a higher log level
 log_handler = logging.StreamHandler()
-# ch.setLevel(logging.INFO)
 class LogFormatter():
     def __init__(self):
         self.start_time = time.time()
@@ -40,19 +35,9 @@ class LogFormatter():
             datetime.timedelta(seconds=time_passed)
         )
         msg_text = msg.getMessage()
-        # msg_text = msg_text.replace('\n', '\n' + ' ' * (len(prefix) + 3))
         return "%s %s" % (prefix, msg_text) if msg_text else ''
-# # create formatter and add it to the handlers
-# formatter = logging.Formatter(
-#     '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log_handler.setFormatter(LogFormatter())
 logger.addHandler(log_handler)
-# Setup logging
-# logging.basicConfig(
-#     format="%(asctime)s - %(levelname)s - %(message)s",
-#     datefmt="%m/%d/%Y %H:%M:%S",
-#     handlers=[logging.StreamHandler(sys.stdout)],
-# )
 
 parser = argparse.ArgumentParser("Fine-tuning NMT")
 # Model args
@@ -106,23 +91,15 @@ bleu = load_metric('sacrebleu')
 def compute_metrics(eval_pred, args):
     predictions, labels = eval_pred
 
-    # print(predictions.shape, labels.shape)
-    # print(logits[0].shape, logits[1].shape)
-    # predictions = np.argmax(logits[0], axis=-1)
     char_preds = []
     char_labels = []
     for b in range(predictions.shape[0]):
-        # pred = predictions[b][predictions[b]!=-100]
         pred = predictions[b]
-        # if b < 5:
-        #     print(pred)
         if (pred==args.eos_token_id).sum() > 0:
             eos_idx = np.argmax(pred==args.eos_token_id)
             pred = pred[:eos_idx]
 
         lab = labels[b]
-        # if b < 5:
-        #     print(lab)
         if (pred==args.eos_token_id).sum() > 0:
             eos_idx = np.argmax(lab==args.eos_token_id)
             lab = lab[:eos_idx]
@@ -134,8 +111,6 @@ def compute_metrics(eval_pred, args):
             print("L:", lab)
         char_preds.append(tok.decode(pred, skip_special_tokens=True))
         char_labels.append([tok.decode(lab, skip_special_tokens=True)])
-        # char_labels.append([from_char(lab)])
-
 
     print("\npred:", char_preds[0:5])
     print("\nlabel:", char_labels[0:5])
