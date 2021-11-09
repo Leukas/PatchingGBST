@@ -22,13 +22,7 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-
-# logger = logging.getLogger('simple_example')
-# logger.setLevel(logging.INFO)
-# # create file handler that logs debug and higher level messages
-# # create console handler with a higher log level
 log_handler = logging.StreamHandler()
-# ch.setLevel(logging.INFO)
 class LogFormatter():
     def __init__(self):
         self.start_time = time.time()
@@ -40,19 +34,10 @@ class LogFormatter():
             datetime.timedelta(seconds=time_passed)
         )
         msg_text = msg.getMessage()
-        # msg_text = msg_text.replace('\n', '\n' + ' ' * (len(prefix) + 3))
         return "%s %s" % (prefix, msg_text) if msg_text else ''
-# # create formatter and add it to the handlers
-# formatter = logging.Formatter(
-#     '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 log_handler.setFormatter(LogFormatter())
 logger.addHandler(log_handler)
-# Setup logging
-# logging.basicConfig(
-#     format="%(asctime)s - %(levelname)s - %(message)s",
-#     datefmt="%m/%d/%Y %H:%M:%S",
-#     handlers=[logging.StreamHandler(sys.stdout)],
-# )
 
 parser = argparse.ArgumentParser("Fine-tuning NMT")
 # Model args
@@ -67,6 +52,8 @@ parser.add_argument("--tiny", action="store_true", help="Use a tiny model, \
 parser.add_argument("--freeze", type=str, default="", help="Freeze transformer portion")
 parser.add_argument("--emb_dim", type=int, default=512, help="Size of embedding dimension.")
 
+# Data args
+parser.add_argument("--langs", type=str, default="de,en", help="Languages used, comma-separated.")
 parser.add_argument("--spm_model", type=str, default="", help="Path of sentencepiece model.")
 parser.add_argument("--data_lim", type=int, default=0, help="Number of sentences to use, or 0 to disable.")
 
@@ -81,15 +68,12 @@ parser.add_argument("--save_steps", type=int, default=5000, help="Number of step
 parser.add_argument("--logging_steps", type=int, default=100, help="Number of steps between logging.")
 parser.add_argument("--eval_only", action="store_true", help="Only evaluate.")
 
-LANG1 = "de"
-LANG2 = "en"
-
 def tokenize(examples, args):
     encoded = {'input_ids':[], 'attention_mask':[], 'decoder_input_ids':[], 'labels':[]}
 
     for example in examples['translation']:
-        src = example[LANG1]
-        tgt = example[LANG2]
+        src = example[args.langs[0]]
+        tgt = example[args.langs[1]]
 
         src_tok = args.tok.encode(src)
         encoded['input_ids'] += [src_tok]
@@ -106,23 +90,15 @@ bleu = load_metric('sacrebleu')
 def compute_metrics(eval_pred, args):
     predictions, labels = eval_pred
 
-    # print(predictions.shape, labels.shape)
-    # print(logits[0].shape, logits[1].shape)
-    # predictions = np.argmax(logits[0], axis=-1)
     char_preds = []
     char_labels = []
     for b in range(predictions.shape[0]):
-        # pred = predictions[b][predictions[b]!=-100]
         pred = predictions[b]
-        # if b < 5:
-        #     print(pred)
         if (pred==args.eos_token_id).sum() > 0:
             eos_idx = np.argmax(pred==args.eos_token_id)
             pred = pred[:eos_idx]
 
         lab = labels[b]
-        # if b < 5:
-        #     print(lab)
         if (pred==args.eos_token_id).sum() > 0:
             eos_idx = np.argmax(lab==args.eos_token_id)
             lab = lab[:eos_idx]
@@ -134,8 +110,6 @@ def compute_metrics(eval_pred, args):
             print("L:", lab)
         char_preds.append(tok.decode(pred, skip_special_tokens=True))
         char_labels.append([tok.decode(lab, skip_special_tokens=True)])
-        # char_labels.append([from_char(lab)])
-
 
     print("\npred:", char_preds[0:5])
     print("\nlabel:", char_labels[0:5])
@@ -157,6 +131,7 @@ class LogFlushCallback(TrainerCallback):
 if __name__ == "__main__":
     args = parser.parse_args()
     args.model_type = args.model_type.lower()
+    args.langs = args.langs.split(",")
     logger.info(args)
     datasets.logging.set_verbosity_error()
 
@@ -173,9 +148,9 @@ if __name__ == "__main__":
     tok = ByT5Tokenizer.from_pretrained(pretrained) if char else T5Tokenizer.from_pretrained(pretrained)
     if args.spm_model:
         assert args.model_type == "word"
-        tok = T5Tokenizer(args.spm_model)
-        args.tok = tok
+        tok = T5Tokenizer(args.spm_model, model_max_length=512)
 
+    args.tok = tok
     args.vocab_size = tok.vocab_size
     args.eos_token_id = 1
     args.bos_token_id = tok.vocab_size - 1
@@ -221,14 +196,9 @@ if __name__ == "__main__":
         disable_tqdm=not args.debug)
 
     early_stopping = EarlyStoppingCallback(early_stopping_patience=10)
-
-    # log_level = training_args.get_process_log_level()
-    # logger.setLevel(log_level)
-    # datasets.utils.logging.set_verbosity(log_level)
-    transformers.utils.logging.set_verbosity_info()
-
-    compute_metrics = partial(compute_metrics, args=args)
     print_cb = LogFlushCallback()
+    compute_metrics = partial(compute_metrics, args=args)
+
     trainer = Seq2SeqTrainer(
         model=model,
         tokenizer=tok,

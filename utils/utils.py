@@ -186,7 +186,7 @@ def load_model(pretrained, args):
             config = T5Config(**tiny_kwargs) # same size as Transformer Base
             model = T5ForConditionalGeneration.from_pretrained(pretrained)
         else:
-            config = T5Config(**tiny_kwargs) # same size as Transformer Base
+            config = T5Config(vocab_size=args.vocab_size, **tiny_kwargs) # same size as Transformer Base
             model = T5ForConditionalGeneration(config)
         return model, model.config
     if args.reload_path:
