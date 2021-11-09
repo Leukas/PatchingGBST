@@ -291,10 +291,14 @@ class T5RainbowStack(T5PreTrainedModel):
         # layer_pads = []
         orig_size = hidden_states.size(1)
         ds_size = math.ceil(hidden_states.size(1)/4)
-
+        orig_mask = encoder_extended_attention_mask
+        # print("mask", extended_attention_mask.size())
+        # if encoder_extended_attention_mask is not None:
+        #     print("cross mask", encoder_extended_attention_mask.size())
+        # print("hid", hidden_states.size())
 
         for i, (layer_module, past_key_value) in enumerate(zip(self.block, past_key_values)):
-            print("i", i)
+            # print("i", i, self.is_decoder)
             layer_head_mask = head_mask[i]
             cross_attn_layer_head_mask = cross_attn_head_mask[i]
             # Model parallel
@@ -368,21 +372,23 @@ class T5RainbowStack(T5PreTrainedModel):
             # layer_outputs = hidden-states, key-value-states (self-attention position bias), (self-attention weights),
             # (cross-attention position bias), (cross-attention weights)
             # append next layer key value states
-            position_bias = layer_outputs[2]
-            if self.is_decoder and encoder_hidden_states is not None:
-                encoder_decoder_position_bias = layer_outputs[4 if output_attentions else 3]
+            
+            # TODO account for PB
+            # position_bias = layer_outputs[2]
+            # if self.is_decoder and encoder_hidden_states is not None:
+            #     encoder_decoder_position_bias = layer_outputs[4 if output_attentions else 3]
 
             if i == self.down_levels:
-                print("exam", extended_attention_mask.size())
-                print("posb", position_bias.size())
-                print("hid", hidden_states.size())
+                # print("posb", position_bias.size())
                 # print("exam", extended_attention_mask.size())
                 pos_hidden = self.pos_embs(torch.arange(ds_size).to(hidden_states.device)).unsqueeze(0).repeat(batch_size, 1, 1)
+                # ds_position_bias = position_bias[:, :, :ds_size]
+                ds_exam = extended_attention_mask[:, :, :ds_size]
                 hidden_states_down = self.down_attn(
                     hidden_states=pos_hidden,
-                    mask=extended_attention_mask,
+                    mask=None,
                     key_value_states=hidden_states,
-                    position_bias=position_bias,
+                    position_bias=None,
                     past_key_value=None,
                     layer_head_mask=None,
                     query_length=None,
@@ -390,17 +396,18 @@ class T5RainbowStack(T5PreTrainedModel):
                     output_attentions=output_attentions,
                 )
                 hidden_states = self.layer_norm(hidden_states_down[0])
+
                 if self.is_decoder:
                     extended_attention_mask = extended_attention_mask[:, :, :ds_size, :ds_size]
                 else:
                     extended_attention_mask = extended_attention_mask[:, :, :, :ds_size]
-                position_bias = position_bias[:, :, :ds_size, :ds_size]
+                # position_bias = position_bias[:, :, :ds_size, :ds_size]
 
 
             if i == self.up_levels:
                 pos_hidden = self.pos_embs(torch.arange(orig_size).to(hidden_states.device)).unsqueeze(0).repeat(batch_size, 1, 1)
                 
-                hidden_states_up = self.down_attn(
+                hidden_states_up = self.up_attn(
                     hidden_states=pos_hidden,
                     mask=None,
                     key_value_states=hidden_states,
@@ -413,6 +420,10 @@ class T5RainbowStack(T5PreTrainedModel):
                 )
                 hidden_states = self.layer_norm(hidden_states_up[0])
 
+            # print("mask", extended_attention_mask.size())
+            # if encoder_extended_attention_mask is not None:
+            #     print("cross mask", encoder_extended_attention_mask.size())
+            # print("hid", hidden_states.size())
 
             # if i < len(self.layer_dropouts):
             #     # mask = torch.ones((hidden_states.size(0), hidden_states.size(1)), dtype=torch.float, device=hidden_states.device)
@@ -571,6 +582,7 @@ class T5Block(nn.Module):
             else:
                 query_length = None
 
+            # print("MASSSSSSSSSK", encoder_attention_mask.size())
             cross_attention_outputs = self.layer[1](
                 hidden_states,
                 key_value_states=encoder_hidden_states,
@@ -976,11 +988,11 @@ class T5Attention(nn.Module):
                 position_bias = position_bias[:, :, -hidden_states.size(1) :, :]
 
             if mask is not None:
-                print("MA", mask.size(), position_bias.size())
+                # print("MA", mask.size(), position_bias.size())
                 position_bias = position_bias + mask  # (batch_size, n_heads, seq_length, key_length)
                 # print("PB", position_bias.size())
 
-        print("PB", position_bias.size())
+        # print("PB", position_bias.size(), scores.size())
         scores += position_bias
         attn_weights = nn.functional.softmax(scores.float(), dim=-1).type_as(
             scores
