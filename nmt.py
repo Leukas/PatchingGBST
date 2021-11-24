@@ -56,7 +56,8 @@ parser.add_argument("--emb_dim", type=int, default=512, help="Size of embedding 
 parser.add_argument("--langs", type=str, default="de,en", help="Languages used, comma-separated.")
 parser.add_argument("--spm_model", type=str, default="", help="Path of sentencepiece model.")
 parser.add_argument("--data_lim", type=int, default=0, help="Number of sentences to use, or 0 to disable.")
-
+parser.add_argument("--bos_buffer", type=int, default=1, help="Number of BOS tokens to pad on the beginning. \
+                    Already included for full GBST model. Only relevant for specific experimental models.")
 # Training args
 parser.add_argument("--debug", action="store_true", help="Activates debug mode, \
                     which shortens steps until evaluation, and enables tqdm.")
@@ -79,7 +80,7 @@ def tokenize(examples, args):
         encoded['input_ids'] += [src_tok]
         
         tgt_tok = args.tok.encode(tgt)
-        encoded['decoder_input_ids'] += [[args.bos_token_id] + tgt_tok[:-1]]
+        encoded['decoder_input_ids'] += [[args.bos_token_id]*args.bos_buffer + tgt_tok[:-args.bos_buffer]]
         encoded['labels'] += [tgt_tok]
 
         attention_mask = torch.ones(len(src_tok), dtype=torch.long).tolist()

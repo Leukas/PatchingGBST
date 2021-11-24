@@ -122,18 +122,38 @@ def load_model(pretrained, args):
         if args.reload_path:
             raise NotImplementedError
 
-        config = T5Config(vocab_size=384, d_model=args.emb_dim, **tiny_kwargs) # same size as Transformer Base
+        # config = T5Config(vocab_size=384, d_model=args.emb_dim, **tiny_kwargs) # same size as Transformer Base
+        config = BertConfig(
+            vocab_size=args.vocab_size, 
+            hidden_size=args.emb_dim, 
+            num_hidden_layers=6, 
+            num_attention_heads=8, 
+            intermediate_size=args.emb_dim*4,
+            max_position_embeddings=1024,
+            )
+
+
         model = T5WithGBSTEncoder(pretrained, args.freeze, t5_config=config)
         return model, config
-    if args.model_type == "full":
+    if args.model_type == "full" or args.model_type == "full_causal":
+        from models.charformer_bert import BertWithGBSTFull
         if args.reload_path:
             raise NotImplementedError
 
-        config = T5Config(vocab_size=384, d_model=args.emb_dim, **tiny_kwargs) # same size as Transformer Base
+        causal = args.model_type == "full_causal"
+        # config = T5Config(vocab_size=384, d_model=args.emb_dim, **tiny_kwargs) # same size as Transformer Base
+        config = BertConfig(
+            vocab_size=args.vocab_size, 
+            hidden_size=args.emb_dim, 
+            num_hidden_layers=6, 
+            num_attention_heads=8, 
+            intermediate_size=args.emb_dim*4,
+            max_position_embeddings=1024,
+            )
         if args.reload_path:
-            model = T5WithGBSTFull.from_pretrained(pretrained, args.freeze, config)
+            model = BertWithGBSTFull.from_pretrained(pretrained, args.freeze, config, causal=causal)
             config = model.config
-        model = T5WithGBSTFull(pretrained, args.freeze, t5_config=config)
+        model = BertWithGBSTFull(pretrained, args.freeze, bert_config=config, causal=causal)
         return model, config
 
         # if args.reload_path:
@@ -141,18 +161,41 @@ def load_model(pretrained, args):
         # else:
     
     if args.model_type == "rainbow":
+        from models.bert_stacked import BertStackingModel, BertStackingLMHeadModel
         if args.reload_path:
             raise NotImplementedError
-        enc_config = BertConfig(vocab_size=384, d_model=args.emb_dim, max_position_embeddings=1024) # same size as Transformer Base
-        # config = BartConfig(vocab_size=384) # same size as Transformer Base
-        # model = BartForConditionalGeneration(config)
-        dec_config = BertConfig(vocab_size=384, d_model=args.emb_dim, max_position_embeddings=1024) # same size as Transformer Base
+
+        enc_config = BertConfig(
+            vocab_size=args.vocab_size, 
+            hidden_size=args.emb_dim, 
+            num_hidden_layers=6, 
+            num_attention_heads=8, 
+            intermediate_size=args.emb_dim*4,
+            max_position_embeddings=1024,
+            )
+        enc_model = BertStackingModel(enc_config)
+        dec_config = BertConfig(
+            vocab_size=args.vocab_size, 
+            hidden_size=args.emb_dim, 
+            num_hidden_layers=6, 
+            num_attention_heads=8, 
+            intermediate_size=args.emb_dim*4,
+            max_position_embeddings=1024,
+            )
         dec_config.is_decoder = True
         dec_config.add_cross_attention = True
-        dec_config.num_hidden_layers = 11
-        enc = BertModel(enc_config)
-        dec = RBD(dec_config)
-        model = EncoderDecoderModel(encoder=enc, decoder=dec)
+        dec_model = BertStackingLMHeadModel(dec_config)
+
+        # enc_config = BertConfig(vocab_size=384, d_model=args.emb_dim, max_position_embeddings=1024) # same size as Transformer Base
+        # config = BartConfig(vocab_size=384) # same size as Transformer Base
+        # model = BartForConditionalGeneration(config)
+        # dec_config = BertConfig(vocab_size=384, d_model=args.emb_dim, max_position_embeddings=1024) # same size as Transformer Base
+        # dec_config.num_hidden_layers = 11
+        # enc = BertModel(enc_config)
+        # dec = RBD(dec_config)
+        model = EncoderDecoderModel(encoder=enc_model, decoder=dec_model)
+        return model, model.config
+    
     if args.model_type == "bert":
         if args.reload_path:
             raise NotImplementedError
