@@ -1,32 +1,16 @@
-from typing import Optional, Union
 import warnings
-from einops.einops import repeat
 import torch
 import torch.nn as nn
 from einops import rearrange
-from transformers import T5Model, T5ForConditionalGeneration, T5Config, EncoderDecoderModel, EncoderDecoderConfig
-from transformers.modeling_utils import PreTrainedModel
-from transformers.models.bert.configuration_bert import BertConfig
+from typing import Optional
+from transformers import EncoderDecoderModel
 from transformers.models.bert.modeling_bert import BertModel, BertLMHeadModel
 from transformers.generation_stopping_criteria import (
-    MaxLengthCriteria,
-    MaxNewTokensCriteria,
-    MaxTimeCriteria,
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
-from transformers.generation_logits_process import (
-    EncoderNoRepeatNGramLogitsProcessor,
-    ForcedBOSTokenLogitsProcessor,
-    ForcedEOSTokenLogitsProcessor,
-    HammingDiversityLogitsProcessor,
-    InfNanRemoveLogitsProcessor,
-    LogitsProcessorList
-)
-
-from models.generate import generate_helper
+from transformers.generation_logits_process import LogitsProcessorList
 from models.gbst import GBST
-import copy
 
 class BertWithGBSTEncoder(nn.Module):
     def __init__(self, pretrained_model, freeze, bert_config=None):
@@ -74,7 +58,6 @@ class BertWithGBSTEncoder(nn.Module):
             decoder_input_ids=decoder_input_ids,
             labels=labels)
 
-        # print(x.size() for x in out)
         return out
 
     def generate(self, input_ids, attention_mask=None, **kwargs):
@@ -86,7 +69,6 @@ class BertWithGBSTEncoder(nn.Module):
             decoder_input_ids=decoder_start,
             **kwargs)
 
-        # print(out.size())
         return out
 
 
@@ -98,7 +80,6 @@ class Upsampler(nn.Module):
         self.pred_layer = nn.Linear(dim, vocab_size)
 
     def forward(self, batch, orig_len):
-        # batch = rearrange(batch, 'b l d -> b d l 1')
         batch = self.up(batch)
         batch = rearrange(batch, 'b l (d m) -> b (l m) d', m=self.ds_factor)
         preds = self.pred_layer(batch[:, :orig_len])

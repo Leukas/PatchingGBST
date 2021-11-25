@@ -1,29 +1,51 @@
-# nmt.py
+# pretrain_unmt.py
 import os
 import transformers
 from transformers import T5Tokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, EarlyStoppingCallback
-from transformers.trainer_callback import PrinterCallback
+from transformers.trainer_callback import TrainerCallback, PrinterCallback
+# from transformers import ByT5Tokenizer # newest version has a bug
 from byt5_tokenizer_new import ByT5Tokenizer
 import datasets
-from datasets import load_dataset
+from datasets import load_dataset, load_metric
 from functools import partial
 from types import MethodType
-from utils.utils import padding_collate_fn, load_model
+from nmt.nmt_eval import evaluation_loop
 from utils.metrics import compute_bleu
-from utils.logging import load_logger, LogFlushCallback
+from utils.utils import padding_collate_fn, load_model
+from utils.mask_mass import mass_collate
 
 import torch
+import numpy as np
 import argparse
+import sys 
+import time, datetime
 import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-logger = load_logger(logger)
+
+log_handler = logging.StreamHandler()
+class LogFormatter():
+    def __init__(self):
+        self.start_time = time.time()
+
+    def format(self, msg):
+        time_passed = round(msg.created - self.start_time)
+        prefix = "[%s - %s]" % (
+            time.strftime('%x %X'),
+            datetime.timedelta(seconds=time_passed)
+        )
+        msg_text = msg.getMessage()
+        return "%s %s" % (prefix, msg_text) if msg_text else ''
+
+log_handler.setFormatter(LogFormatter())
+logger.addHandler(log_handler)
 
 parser = argparse.ArgumentParser("Fine-tuning NMT")
 # Model args
 parser.add_argument("--model_type", type=str, help="The model type to use. \
-                    Currently supported (case insensitive): {word, char, gbst, full, full_causal}" )
+                    Currently supported (case insensitive): {t5 = word, byt5 = char}. \
+                    To be added: {charformer = gbst, fullchar = full}" )
 parser.add_argument("--reload_path", type=str, help="Path of model to reload.")
 parser.add_argument("--no_pretrain", action="store_true", help="Don't use a pretrained model. \
                     Only applies if reload_path is not provided.")
@@ -52,20 +74,24 @@ parser.add_argument("--eval_only", action="store_true", help="Only evaluate.")
 def tokenize(examples, args):
     encoded = {'input_ids':[], 'attention_mask':[], 'decoder_input_ids':[], 'labels':[]}
 
-    for example in examples['translation']:
-        src = example[args.langs[0]]
-        tgt = example[args.langs[1]]
+    for lang in args.langs:
+        for example in examples['translation']:
+            src = example[lang]
 
-        src_tok = args.tok.encode(src)
-        encoded['input_ids'] += [src_tok]
-        
-        tgt_tok = args.tok.encode(tgt)
-        encoded['decoder_input_ids'] += [[args.bos_token_id]*args.bos_buffer + tgt_tok[:-args.bos_buffer]]
-        encoded['labels'] += [tgt_tok]
-
-        attention_mask = torch.ones(len(src_tok), dtype=torch.long).tolist()
-        encoded['attention_mask'] += [attention_mask]
+            src_tok = args.tok.encode(src)
+            encoded['input_ids'] += [src_tok]
+            
+            attention_mask = torch.ones(len(src_tok), dtype=torch.long).tolist()
+            encoded['attention_mask'] += [attention_mask]
     return encoded
+
+class LogFlushCallback(TrainerCallback):
+    """ Like printer callback, but with logger and flushes the logs every call """
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        _ = logs.pop("total_flos", None)
+        if state.is_local_process_zero:
+            logger.info(logs)
+            sys.stdout.flush()
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -98,23 +124,24 @@ if __name__ == "__main__":
     if args.reload_path:
         assert not args.no_pretrain
         pretrained_model = args.reload_path
-    model = load_model(pretrained_model, args)
+    model, config = load_model(pretrained_model, args)
 
     model.config.bos_token_id = args.bos_token_id
 
-    # dataset = load_dataset('dataloading/translation_dataset.py', 'de-en')
-    dataset = load_dataset('dataloading/iwslt2017_dataset.py', 'iwslt2017-de-en')
+    dataset = load_dataset('dataloading/translation_dataset.py', 'de-en')
+    # dataset = load_dataset('dataloading/iwslt2017_dataset.py', 'iwslt2017-de-en')
 
     if args.debug and args.eval_only:
         dataset = dataset.filter(lambda example, idx: idx < 10, with_indices=True)
 
     if args.data_lim:
         dataset['train'] = dataset['train'].filter(lambda example, idx: idx < args.data_lim, with_indices=True)
+        # dataset['test'] = dataset['test'][:10]
 
     tokenize = partial(tokenize, args=args)
     dataset = dataset.map(tokenize, batched=True, num_proc=10)
 
-    training_args = Seq2SeqTrainingArguments("dumped/nmt/%s/%s/" % (args.model_type, os.environ.get('SLURM_JOB_ID')),
+    training_args = Seq2SeqTrainingArguments("dumped/pretrain/%s/%s/" % (args.model_type, os.environ.get('SLURM_JOB_ID')),
         evaluation_strategy="steps",
         save_strategy="steps",
         generation_max_length=1024 if char else 256,
@@ -135,7 +162,7 @@ if __name__ == "__main__":
         disable_tqdm=not args.debug)
 
     early_stopping = EarlyStoppingCallback(early_stopping_patience=10)
-    print_cb = LogFlushCallback(logger)
+    print_cb = LogFlushCallback()
     compute_metrics = partial(compute_bleu, args=args)
 
     trainer = Seq2SeqTrainer(
