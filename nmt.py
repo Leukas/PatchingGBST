@@ -11,6 +11,8 @@ from functools import partial
 from types import MethodType
 from nmt.nmt_eval import evaluation_loop
 from utils.utils import padding_collate_fn, load_model
+from utils.metrics import compute_bleu
+from utils.logging import load_logger, LogFlushCallback
 
 import torch
 import numpy as np
@@ -21,23 +23,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+logger = load_logger(logger)
+# log_handler = logging.StreamHandler()
+# class LogFormatter():
+#     def __init__(self):
+#         self.start_time = time.time()
 
-log_handler = logging.StreamHandler()
-class LogFormatter():
-    def __init__(self):
-        self.start_time = time.time()
+#     def format(self, msg):
+#         time_passed = round(msg.created - self.start_time)
+#         prefix = "[%s - %s]" % (
+#             time.strftime('%x %X'),
+#             datetime.timedelta(seconds=time_passed)
+#         )
+#         msg_text = msg.getMessage()
+#         return "%s %s" % (prefix, msg_text) if msg_text else ''
 
-    def format(self, msg):
-        time_passed = round(msg.created - self.start_time)
-        prefix = "[%s - %s]" % (
-            time.strftime('%x %X'),
-            datetime.timedelta(seconds=time_passed)
-        )
-        msg_text = msg.getMessage()
-        return "%s %s" % (prefix, msg_text) if msg_text else ''
-
-log_handler.setFormatter(LogFormatter())
-logger.addHandler(log_handler)
+# log_handler.setFormatter(LogFormatter())
+# logger.addHandler(log_handler)
 
 parser = argparse.ArgumentParser("Fine-tuning NMT")
 # Model args
@@ -87,48 +89,6 @@ def tokenize(examples, args):
         encoded['attention_mask'] += [attention_mask]
     return encoded
 
-bleu = load_metric('sacrebleu')
-def compute_metrics(eval_pred, args):
-    predictions, labels = eval_pred
-
-    char_preds = []
-    char_labels = []
-    for b in range(predictions.shape[0]):
-        pred = predictions[b]
-        if (pred==args.eos_token_id).sum() > 0:
-            eos_idx = np.argmax(pred==args.eos_token_id)
-            pred = pred[:eos_idx]
-
-        lab = labels[b]
-        if (pred==args.eos_token_id).sum() > 0:
-            eos_idx = np.argmax(lab==args.eos_token_id)
-            lab = lab[:eos_idx]
-        else:
-            lab = lab[lab!=-100]
-
-        if b < 5:
-            print("P:", pred)
-            print("L:", lab)
-        char_preds.append(tok.decode(pred, skip_special_tokens=True))
-        char_labels.append([tok.decode(lab, skip_special_tokens=True)])
-
-    print("\npred:", char_preds[0:5])
-    print("\nlabel:", char_labels[0:5])
-
-    bleu_score = {"bleu": bleu.compute(predictions=char_preds, references=char_labels)['score']}
-
-    sys.stdout.flush()
-    return bleu_score
-
-
-class LogFlushCallback(TrainerCallback):
-    """ Like printer callback, but with logger and flushes the logs every call """
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        _ = logs.pop("total_flos", None)
-        if state.is_local_process_zero:
-            logger.info(logs)
-            sys.stdout.flush()
-
 if __name__ == "__main__":
     args = parser.parse_args()
     args.model_type = args.model_type.lower()
@@ -160,7 +120,7 @@ if __name__ == "__main__":
     if args.reload_path:
         assert not args.no_pretrain
         pretrained_model = args.reload_path
-    model, config = load_model(pretrained_model, args)
+    model = load_model(pretrained_model, args)
 
     model.config.bos_token_id = args.bos_token_id
 
@@ -197,8 +157,8 @@ if __name__ == "__main__":
         disable_tqdm=not args.debug)
 
     early_stopping = EarlyStoppingCallback(early_stopping_patience=10)
-    print_cb = LogFlushCallback()
-    compute_metrics = partial(compute_metrics, args=args)
+    print_cb = LogFlushCallback(logger)
+    compute_metrics = partial(compute_bleu, args=args)
 
     trainer = Seq2SeqTrainer(
         model=model,
