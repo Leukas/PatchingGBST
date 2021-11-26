@@ -10,7 +10,7 @@ from functools import partial
 from types import MethodType
 from utils.utils import padding_collate_fn, load_model
 from utils.metrics import compute_bleu
-from utils.logging import load_logger, LogFlushCallback
+from utils.logging_utils import load_logger, LogFlushCallback
 
 import torch
 import argparse

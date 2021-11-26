@@ -12,6 +12,7 @@ from types import MethodType
 from nmt.nmt_eval import evaluation_loop
 from utils.metrics import compute_bleu
 from utils.utils import padding_collate_fn, load_model
+from utils.logging_utils import load_logger, LogFlushCallback
 from utils.mask_mass import mass_collate
 
 import torch
@@ -23,23 +24,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-log_handler = logging.StreamHandler()
-class LogFormatter():
-    def __init__(self):
-        self.start_time = time.time()
-
-    def format(self, msg):
-        time_passed = round(msg.created - self.start_time)
-        prefix = "[%s - %s]" % (
-            time.strftime('%x %X'),
-            datetime.timedelta(seconds=time_passed)
-        )
-        msg_text = msg.getMessage()
-        return "%s %s" % (prefix, msg_text) if msg_text else ''
-
-log_handler.setFormatter(LogFormatter())
-logger.addHandler(log_handler)
+logger = load_logger(logger)
 
 parser = argparse.ArgumentParser("Fine-tuning NMT")
 # Model args
@@ -84,14 +69,6 @@ def tokenize(examples, args):
             attention_mask = torch.ones(len(src_tok), dtype=torch.long).tolist()
             encoded['attention_mask'] += [attention_mask]
     return encoded
-
-class LogFlushCallback(TrainerCallback):
-    """ Like printer callback, but with logger and flushes the logs every call """
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        _ = logs.pop("total_flos", None)
-        if state.is_local_process_zero:
-            logger.info(logs)
-            sys.stdout.flush()
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -177,12 +154,6 @@ if __name__ == "__main__":
         )
 
     trainer.pop_callback(PrinterCallback)
-
-    # from models.charformer import compute_loss
-    # trainer.compute_loss = MethodType(compute_loss, trainer)
-    # trainer.evaluation_loop = MethodType(evaluation_loop, trainer)
-    # from models.rainbow import prediction_step
-    # trainer.prediction_step = MethodType(prediction_step, trainer)
 
     if not args.eval_only:
         trainer.train()
