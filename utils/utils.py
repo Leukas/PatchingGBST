@@ -8,11 +8,8 @@ import numpy as np
 from transformers import EncoderDecoderModel
 from transformers.models.bert.configuration_bert import BertConfig
 from transformers.models.bert.modeling_bert import BertModel, BertLMHeadModel
-from transformers.models.canine.modeling_canine import CanineModel
-from models.canine_bert import BertWithCanineFull
 from models.charformer_bert import BertWithGBSTEncDec, BertWithGBSTEncoder
-from models.lee_bert import BertWithLeeFull, BertWithLeeFull2
-from models.pool import BertWithPoolFull, BertWithPoolFull2
+from models.lee_bert import BertWithLeeFull
 from models.twostep import TwoStep
 from models.other_charformers import BertWithMaskedGBSTEncDec, BertWithPaddedGBSTEncDec
 
@@ -117,48 +114,13 @@ def load_model(pretrained, args):
             model = BertWithLeeFull(pretrained, args.freeze, bert_config=config, causal=True, ds_factor=args.ds_factor)
         return model
 
-    if args.model_type == "full_pool":
-        if args.reload_path:
-            model = BertWithPoolFull2.from_pretrained(pretrained, args.freeze, config, causal=True, ds_factor=args.ds_factor)
-        else:
-            model = BertWithPoolFull2(pretrained, args.freeze, bert_config=config, causal=True, ds_factor=args.ds_factor)
-        return model
-
-    if args.model_type == "full_canine":
-        if args.reload_path:
-            raise NotImplementedError
-
-        if args.reload_path:
-            model = BertWithCanineFull.from_pretrained(pretrained, args.freeze, config, causal=True, ds_factor=args.ds_factor)
-        else:
-            model = BertWithCanineFull(pretrained, args.freeze, bert_config=config, causal=True, ds_factor=args.ds_factor)
-        return model
-    
-
     if args.model_type == "twostep" or args.model_type == "twostep_word":
         if args.reload_path:
             model = TwoStep.from_pretrained(pretrained, args.freeze, config)
         else:
             model = TwoStep(pretrained, args.freeze, bert_config=config)
         return model
-   
-
-    if args.model_type == "stacked_bert":
-        from models.bert_stacked import BertStackingModel, BertStackingLMHeadModel
-        if args.reload_path:
-            raise NotImplementedError
-
-        enc_config = deepcopy(config)
-        enc_model = BertStackingModel(enc_config)
-
-        dec_config = deepcopy(config)
-        dec_config.is_decoder = True
-        dec_config.add_cross_attention = True
-        dec_model = BertStackingLMHeadModel(dec_config)
-
-        model = EncoderDecoderModel(encoder=enc_model, decoder=dec_model)
-        return model
-    
+       
     if args.model_type == "word" or args.model_type == "char":
         if args.reload_path:
             model = EncoderDecoderModel.from_pretrained(pretrained)

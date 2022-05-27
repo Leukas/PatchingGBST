@@ -260,16 +260,8 @@ def create_causal_mask(blocks_in_seq, block_size, ds_factor):
     arange = rearrange(torch.arange(block_size*blocks_in_seq)+1, '(n m) -> m n', m=block_size)
     arange = arange[:-1]
     mask = torch.ones(block_size-1, blocks_in_seq)
-    # for i in range(block_size-1):
-        # removals = (arange+i) % ds_factor == 0
-        # mask[0:block_size-i-1] -= removals[0:block_size-i-1].long()
     removals = arange % ds_factor == 0
     mask -= removals.long()
-    # for i in range(block_size-1):
-        # mask[i] -= removals[i].long()
-        # print(x.size())
-        # mask[i] = 
-    # print("MASK",mask)
 
     return mask.transpose(0, 1).bool() # n m
 
@@ -288,54 +280,11 @@ def apply_mask(sequence, ds_factor, mask=None):
         cumseq = sequence.cumsum(dim=2) / torch.arange(1, block_size+1, device=sequence.device).view(1, -1, 1)
     else:
         cummask = mask.cumsum(dim=2).clamp(min=1).unsqueeze(-1)
-        # print(mask.size(), cummask.size())
-        # print(cummask)
-        # print(sequence.size())
         cumseq = sequence.cumsum(dim=2) / cummask
-    # print(cumseq)
-    # print(mask.size())
-    # mask[0, 2, 0] = True
-    # print(mask)
+
     # copy mean backwards if there is no leakage
     for i in range(1, block_size):
         m = causal_mask[:, :, -i]
-        # print(m.size())
-        # print(cumseq[:, :, -i-1].size())
         cumseq[:, :, -i-1][m] = cumseq[:, :, -i][m]
 
     return cumseq
-
-if __name__ == "__main__":
-
-    x = torch.arange(20).view(1, 5, 4, 1)+1
-    xm = torch.ones(20).bool()
-    # xm[14:] = 0
-    # xm = xm.unsqueeze(0)
-    # mask_blocks = rearrange(xm, 'b (n m) -> b n m', m = 5)
-    # print(mask_blocks)
-    mask_blocks = None
-    print(x)
-    # print(xm)
-    # y = create_causal_mask(7, 3, 4)
-    # print("y=", y)
-
-    z = apply_mask(x, 3, mask_blocks)
-    print(z)
-
-
-
-    # gbst = GBST(num_tokens=50, dim=2, max_block_size=5, score_consensus_attn=False)
-    # gbst.token_emb.weight = torch.nn.Parameter(torch.arange(100).view(50,2).float())
-
-
-    # gbst.score_fn[0].weight[0] = torch.nn.Parameter(torch.Tensor([0.5, 0.5]))
-    # gbst.score_fn[0].bias = torch.nn.Parameter(torch.Tensor([0]))
-
-    # mask = torch.ones(10)
-    # mask[8:] = 0
-    # mask = mask.unsqueeze(0).bool()
-    # x = gbst(torch.arange(10).view(1,10), mask)# , mask=torch.eye(10).view(1, 10, 10))
-    # print(x[0].size())
-    # print(x[1])
-
-

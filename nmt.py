@@ -1,6 +1,4 @@
 # nmt.py
-import os
-import transformers
 from transformers import T5Tokenizer, Seq2SeqTrainingArguments, Seq2SeqTrainer, EarlyStoppingCallback
 from transformers.trainer_callback import PrinterCallback
 from byt5_tokenizer_new import ByT5Tokenizer
@@ -11,8 +9,8 @@ from types import MethodType
 from utils.utils import get_reload_path, tokenize, padding_collate_fn, load_model
 from utils.metrics import compute_bleu
 from utils.logging_utils import load_logger, LogFlushCallback
+from nmt.nmt_eval import evaluation_loop
 
-import torch
 import argparse
 import logging
 
@@ -84,7 +82,6 @@ if __name__ == "__main__":
 
     model.config.bos_token_id = args.tok.bos
 
-    # dataset = load_dataset('dataloading/translation_dataset.py', 'de-en')
     dataset = load_dataset('dataloading/iwslt2017_dataset.py', 'iwslt2017-%s-%s' % tuple(args.langs))
 
     # if args.debug:
@@ -142,12 +139,7 @@ if __name__ == "__main__":
 
     trainer.pop_callback(PrinterCallback)
 
-    # from models.charformer import compute_loss
-    # trainer.compute_loss = MethodType(compute_loss, trainer)
-    from nmt.nmt_eval import evaluation_loop
     trainer.evaluation_loop = MethodType(evaluation_loop, trainer)
-    # trainer.evaluate = MethodType(evaluate, trainer)
-    # trainer.callback_handler.on_evaluate = MethodType(on_evaluate, trainer.callback_handler)
 
     if not args.eval_only:
         trainer.train()
